@@ -2,10 +2,11 @@
 # Calculator           #
 ########################
 
-import csv
 import logging
 from decimal import Decimal
 from typing import List, Optional
+
+import pandas as pd
 
 from app.calculation import Calculation, CalculationFactory
 from app.calculator_config import CalculatorConfig
@@ -191,21 +192,17 @@ class Calculator:
         history directory is created automatically if it does not exist.
         """
         self.config.history_dir.mkdir(parents=True, exist_ok=True)
-        with open(
-            self.config.history_file,
-            'w',
-            newline='',
-            encoding=self.config.default_encoding,
-        ) as f:
-            writer = csv.writer(f)
-            writer.writerow(['operation', 'operand1', 'operand2', 'result'])
-            for calc in self._history:
-                writer.writerow([
-                    calc.operation,
-                    calc.operand1,
-                    calc.operand2,
-                    calc.result,
-                ])
+        records = [
+            {
+                'operation': calc.operation,
+                'operand1': calc.operand1,
+                'operand2': calc.operand2,
+                'result': calc.result,
+            }
+            for calc in self._history
+        ]
+        df = pd.DataFrame(records, columns=['operation', 'operand1', 'operand2', 'result'])
+        df.to_csv(self.config.history_file, index=False, encoding=self.config.default_encoding)
         logging.info("History saved to %s", self.config.history_file)
 
     def load_history(self) -> None:
@@ -219,21 +216,16 @@ class Calculator:
             return
 
         self._history.clear()
-        with open(
-            self.config.history_file,
-            'r',
-            encoding=self.config.default_encoding,
-        ) as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                try:
-                    calc = CalculationFactory.create_calculation(
-                        row['operation'],
-                        float(row['operand1']),
-                        float(row['operand2']),
-                    )
-                    self._history.append(calc)
-                except (ValueError, KeyError) as exc:
-                    logging.warning("Skipping invalid history entry: %s", exc)
+        df = pd.read_csv(self.config.history_file, encoding=self.config.default_encoding)
+        for _, row in df.iterrows():
+            try:
+                calc = CalculationFactory.create_calculation(
+                    row['operation'],
+                    float(row['operand1']),
+                    float(row['operand2']),
+                )
+                self._history.append(calc)
+            except (ValueError, KeyError) as exc:
+                logging.warning("Skipping invalid history entry: %s", exc)
 
         logging.info("History loaded from %s", self.config.history_file)
